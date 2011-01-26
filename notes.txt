@@ -1,0 +1,30 @@
+Operation:
+Unit is "powered on" by tilt switch
+Cycle light show mode by holding hand in front of proximity sensor
+light show continues for 10 minutes then goes to sleep
+Unit can be re-awakened from sleep by holding hand in front of sensor
+Hold hand in front of sensor to select light mode (1 - N)
+Every iteration of light show mode toggles continuous/sleep timeout mode
+
+Notes:
+Disable ADC in light show sleep mode
+SM - Power down when tilt switch is deactivated.
+SM - Which mode to go to when light show times out?
+
+Should the light show time out? What if someone wanted it to run continuously.
+Maybe have one mode when it runs continuously cycling thru all modes.
+
+LED to indicate unit is in light show sleep mode (amber, Low I)
+LED to indicate unit is in light show continuous mode (amber, Mid I)
+
+Light show modes:
+- R continuous/fade
+- G continuous/fade
+- B continuous/fade
+- R/G/B blink/fade
+- R/G blink/fade
+- G/B blink/fade
+- R/B blink/fade
+- RGB color wheel
+- Mode cycle
+- Toggle continuous/sleep operation mode
