@@ -3,3 +3,7 @@
 .DS_Store
 *.tmp
 *.bak
+Hardware/silk_bottom.png
+Hardware/silk_top.png
+Hardware/trace_bottom.png
+Hardware/trace_top.png
