@@ -1,25 +1,25 @@
 EAGLE AutoRouter Statistics:
 
-Job           : /Users/dshanaghy/Documents/eagle/LEDHeartBeat/AddonBoard.brd
+Job           : /Users/dshanaghy/Workspace/PersonalProjects/Valentines2k11/Hardware/AddonBoard.brd
 
-Start at      : 07:59:24 (1/26/11)
-End at        : 07:59:25 (1/26/11)
+Start at      : 01:36:58 (1/27/11)
+End at        : 01:36:59 (1/27/11)
 Elapsed time  : 00:00:01
 
-Signals       :    18   RoutingGrid: 50 mil  Layers: 2
-Connections   :    29   predefined:  0 ( 0 Vias )
+Signals       :    20   RoutingGrid: 50 mil  Layers: 2
+Connections   :    32   predefined:  0 ( 0 Vias )
 
 Router memory :   8960
 
 Passname          :     Route Optimize1 Optimize2 Optimize3 Optimize4
 
-Time per pass     :  00:00:00  00:00:00  00:00:01  00:00:00  00:00:00
-Number of Ripups  :        17         0         0         0         0
-max. Level        :         2         0         0         0         0
-max. Total        :        10         0         0         0         0
+Time per pass     :  00:00:01  00:00:00  00:00:00  00:00:00  00:00:00
+Number of Ripups  :        38         0         0         0         0
+max. Level        :         5         0         0         0         0
+max. Total        :        16         0         0         0         0
 
-Routed            :        29        29        29        29        29
-Vias              :        14        13        13        11        11
+Routed            :        32        32        32        32        32
+Vias              :        17        16        16        16        16
 Resolution        :   100.0 %   100.0 %   100.0 %   100.0 %   100.0 %
 
 Final             : 100.0% finished

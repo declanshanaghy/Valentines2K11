@@ -335,9 +335,15 @@ UsedLibrary="/Users/dshanaghy/Documents/eagle/lbr/dek.lbr"
 UsedLibrary="/Users/dshanaghy/Documents/eagle/lbr/Declan.lbr"
 
 [Win_1]
+Type="Control Panel"
+Loc="233 219 832 618"
+State=2
+Number=0
+
+[Win_2]
 Type="Schematic Editor"
-Loc="980 598 1579 997"
-State=0
+Loc="0 22 1439 873"
+State=1
 Number=2
 File="AddonBoard.sch"
 View="-1091947 -694814 830571 771102"
@@ -374,12 +380,6 @@ PadsSameType=0
 Layer=91
 Views=" 1: -1091947 -694814 830571 771102"
 Sheet=1
-
-[Win_2]
-Type="Control Panel"
-Loc="784 817 1383 1216"
-State=2
-Number=0
 
 [Desktop]
 Screen="2560 1600"

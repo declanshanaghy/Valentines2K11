@@ -1,5 +1,5 @@
-*.b#1
-*.s#1
+*.b#?
+*.s#?
 .DS_Store
 *.tmp
 *.bak
