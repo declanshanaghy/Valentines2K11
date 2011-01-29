@@ -8,12 +8,13 @@
 #define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
 #endif
 
-volatile boolean fWatchDog = 0;
+int fWatchDog = 0;
 
 //Variables for running distance calculation
 //TODO: Convert to use integer math
 double distanceSampleSum = 0.0;
 int distanceSampleCount = 0;
+unsigned long tDistanceModeBegin = -1;
 
 int DIST_SENS_MIN = 19;
 int DIST_MODE_CHG = DIST_SENS_MIN * 2;
@@ -54,18 +55,36 @@ void setup()
 
   //Ensure the onboard LED is off                                    
   //digitalWrite(13,LOW);
+
+  MCUSR = 0;
+  wdt_disable();  // disable watchdog on boot
   
   preSleep();  
   postSleep();  
 }
 
 void loop() {
-  if ( fWatchDog ) {
+  if ( fWatchDog == 1 ) {
     fWatchDog = 0;
     digitalWrite(PIN_INDICATOR_LED, HIGH);
-    checkWDTWakeup();
+    int nextState = checkWDTWakeup();
     digitalWrite(PIN_INDICATOR_LED, LOW);
-    sleepNowWDT();
+
+    Serial.print("nextState is ");
+    Serial.println(nextState);
+      
+    switch ( nextState ) {
+      case -1:
+        wdt_disable();  // disable watchdog then go to idle sleep mode
+        sleepNowTilt();
+      case 0:  //Remain in the same state
+        sleepNowWDT();
+        break;
+      case 1:  //Wake up
+        wdt_disable();  // disable watchdog when running    
+        postSleep();
+        break;
+    }
   }
   else {
     unsigned long n = millis();
@@ -83,12 +102,13 @@ void loop() {
 //    Serial.println(tLastModeChange);
 //    Serial.print("Operating for ");
 //    Serial.println(tOperating);
-  
-    checkMode();
-  
+
     procLightShow();
+  
+    boolean activity = checkMode();
     
-    checkSleep();
+    if (!activity)
+      checkSleep();
   }
 }
 
@@ -100,18 +120,25 @@ void wakeUpTilt() {        // here the interrupt is handled after wakeup
   Serial.println("wakeUpNow");  
 }
 
-void checkWDTWakeup() {    //Check IR sensor reading, if something is within range. wake up.
+//Check IR sensor reading, if something is within range. wake up. (return 1)
+//Check tilt switch, if the tiltswitch is deactivated. go to idle sleep (return -2)
+//Remain in the same state, return 0.
+int checkWDTWakeup() {    
   int distance = calcAveragedIRDistance();
+//  int distance = calcRawIRDistance();
   
   Serial.print("WDT distance is: ");
   Serial.println(distance);
-  delay(100);
   
-  if ( distance < DIST_WAKE_WDT ) {
+  if ( distance > 0 && distance < DIST_WAKE_WDT ) {
     Serial.println("WDT wake up!");
-    wdt_disable();  
-    fWatchDog = 0;
+    return 1;
   }
+  
+  if ( !isTiltActive )
+    return -1;
+  
+  return 0;
 }
 
 //Housekeeping before sleeping
@@ -128,6 +155,8 @@ void postSleep() {
 
 void sleepNowTimer()         // here we put the arduino to watchdog timer sleep mode because the run time passed a certain time.
 {
+  delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
+
   // CPU Sleep Modes 
   // SM2 SM1 SM0 Sleep Mode
   // 0   0   0   Idle
@@ -148,22 +177,9 @@ void sleepNowTimer()         // here we put the arduino to watchdog timer sleep 
   sleepNowWDT();
 }
 
-void sleepNowWDT() {
-  cbi(ADCSRA,ADEN);                    // switch Analog to Digitalconverter OFF
-
-  set_sleep_mode(SLEEP_MODE_PWR_DOWN); // sleep mode is set here
-  sleep_enable();
-
-  sleep_mode();                        // System sleeps here
-
-  sleep_disable();                     // System continues execution here when watchdog timed out 
-  sbi(ADCSRA,ADEN);                    // switch Analog to Digitalconverter ON
-
-}
-
 //****************************************************************
 // 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,5=500ms
-// 6=1 sec,7=2 sec, 8=4 sec, 9=8sec
+// 6=1 sec,7=2 sec, 8=4 sec, 9= 8sec
 void setupWatchdog(int ii) {
   byte bb;
   int ww;
@@ -174,6 +190,7 @@ void setupWatchdog(int ii) {
   ww=bb;
   Serial.println(ww);
 
+
   MCUSR &= ~(1<<WDRF);
   // start timed sequence
   WDTCSR |= (1<<WDCE) | (1<<WDE);
@@ -182,14 +199,31 @@ void setupWatchdog(int ii) {
   WDTCSR |= _BV(WDIE);
 }
 
+void sleepNowWDT() {
+  delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
+
+  cbi(ADCSRA,ADEN);                    // switch Analog to Digitalconverter OFF
+
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN); // sleep mode is set here
+  sleep_enable();
+
+  sleep_mode();                        // System sleeps here
+
+  sleep_disable();                     // System continues execution here when watchdog timed out 
+  sbi(ADCSRA,ADEN);                    // switch Analog to Digitalconverter ON
+}
+
 //****************************************************************  
 // Watchdog Interrupt Service / is executed when  watchdog timed out
 ISR(WDT_vect) {
+//  Serial.print("fWatchDog = 1\n");
   fWatchDog = 1;  // set WDT flag
 }
 
 void sleepNowTilt()         // here we put the arduino to idle sleep mode because the tilt switch was de-activated
 {
+  delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
+  
   /* Now is the time to set the sleep mode. In the Atmega8 datasheet
    * http://www.atmel.com/dyn/resources/prod_documents/doc2486.pdf on page 35
    * there is a list of sleep modes which explains which clocks and 
@@ -234,6 +268,7 @@ void sleepNowTilt()         // here we put the arduino to idle sleep mode becaus
    * In all but the IDLE sleep modes only LOW can be used.
    */
 
+  //cli();            // enable interrupts
   attachInterrupt(0,wakeUpTilt, LOW); // use interrupt 0 (pin 2) and run function
                                      // wakeUpNow when pin 2 gets LOW 
   preSleep();
@@ -247,10 +282,10 @@ void sleepNowTilt()         // here we put the arduino to idle sleep mode becaus
   detachInterrupt(0);      // disables interrupt 0 on pin 2 so the 
                            // wakeUpNow code will not be executed 
                            // during normal running time.
+  //sei();          // disable interrupts after waking up from sleep                          
 }
 
-unsigned long tDistanceModeBegin = -1;
-void checkMode() {
+boolean checkMode() {
   int distance = calcAveragedIRDistanceAsync();
   
   if ( distance > 0 ) {
@@ -291,11 +326,15 @@ void checkMode() {
 //        Serial.print("lightMode stays at ");
 //        Serial.println(lightMode);  
 //      }
+
+      return true;
     }
     else {
       tDistanceModeBegin = -1;
       digitalWrite(PIN_INDICATOR_LED, LOW);
     }
+    
+    return false;
   }
 }
 
@@ -309,18 +348,19 @@ int calcAveragedIRDistanceAsync() {
 }
 
 int calcRawIRDistance() {
-  return (int)calcIRDistance(false, 1);
+  int d = (int)calcIRDistance(false, 1);
+  return d > 0 ? d : 32768;
 }
 
 int calcAveragedIRDistance() {
   distanceSampleCount = 0;
-  int i = 0, distance = -1;
+  int i = 0, d = -1;
   
-  while ( distance < 0 && i++ <= DIST_N_SAMPLE ) {
-    distance = (int)calcIRDistance(true, DIST_N_SAMPLE);    
+  while ( d < 0 && i++ <= DIST_N_SAMPLE ) {
+    d = (int)calcIRDistance(true, DIST_N_SAMPLE);    
   } 
   
-  return distance;
+  return d > 0 ? d : 32767;
 }
 
 float calcIRDistance(boolean average, int nSamples) {
@@ -330,8 +370,9 @@ float calcIRDistance(boolean average, int nSamples) {
 //  Serial.print("rawDistance is: ");
 //  Serial.println(rawDistance);
 
-  if ( !average )
-    return rawDistance;
+  if ( !average ) {
+      return rawDistance;
+  }
     
   distanceSampleSum += rawDistance;
   distanceSampleCount++;
@@ -390,8 +431,6 @@ void checkSleepSerial() {
     int val = Serial.read();
     if (val == 'S') {
       Serial.println("Serial: Entering WDT sleep mode");
-      delay(100);     // this delay is needed, the sleep 
-                      // function will provoke a Serial error otherwise!!
       sleepNowTimer();     //Go into watchdog sleep mode
     }
     if (val == 'A') {
@@ -403,21 +442,27 @@ void checkSleepSerial() {
 void checkSleepTimer() {
    // check if it should go to sleep because of time
   if (tOperating >= T_AWAKE_MAX) {
+      Serial.print("Operating for ");
+      Serial.println(tOperating);
       Serial.println("TIMER: Entering WDT sleep mode");
-      delay(100);     // this delay is needed, the sleep 
-                      // function will provoke a Serial error otherwise!!
       sleepNowTimer();     //Go into watchdog sleep mode
   }
 }
 
+boolean isTiltActive() {
+  /***************Production mode****************/
+  //HIGH == tilt switch indicates we should sleep
+  //return digitalRead(PIN_TILT) == HIGH;
+
+
+  /***************Test mode****************/
+  //LOW == pushbutton switch indicates we should go to sleep
+  return digitalRead(PIN_TILT) == LOW;
+}
+
 void checkSleepTilt() {
-  int tilt = digitalRead(PIN_TILT);
-  //Low for now while pushbutton is being used. 
-  //Tilt switch will indicate HIGH when tilted to off position
-  if ( tilt == LOW ) {  
+  if ( isTiltActive() ) {
       Serial.println("TILT: Entering idle sleep mode");
-      delay(100);     // this delay is needed, the sleep 
-                      // function will provoke a Serial error otherwise!!
       sleepNowTilt();     // sleep function called here
   }
 }
