@@ -59,7 +59,6 @@ void setup()
   MCUSR = 0;
   wdt_disable();  // disable watchdog on boot
   
-  preSleep();  
   postSleep();  
 }
 
@@ -77,6 +76,7 @@ void loop() {
       case -1:
         wdt_disable();  // disable watchdog then go to idle sleep mode
         sleepNowTilt();
+        break;
       case 0:  //Remain in the same state
         sleepNowWDT();
         break;
@@ -135,7 +135,7 @@ int checkWDTWakeup() {
     return 1;
   }
   
-  if ( !isTiltActive )
+  if ( isTiltActive() )
     return -1;
   
   return 0;
@@ -155,6 +155,7 @@ void postSleep() {
 
 void sleepNowTimer()         // here we put the arduino to watchdog timer sleep mode because the run time passed a certain time.
 {
+  Serial.println("TIMER: Entering WDT sleep mode");
   delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
 
   // CPU Sleep Modes 
@@ -179,7 +180,7 @@ void sleepNowTimer()         // here we put the arduino to watchdog timer sleep 
 
 //****************************************************************
 // 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,5=500ms
-// 6=1 sec,7=2 sec, 8=4 sec, 9= 8sec
+// 6=1 sec,7=2 sec, 8=4 sec, 9=8sec
 void setupWatchdog(int ii) {
   byte bb;
   int ww;
@@ -222,6 +223,7 @@ ISR(WDT_vect) {
 
 void sleepNowTilt()         // here we put the arduino to idle sleep mode because the tilt switch was de-activated
 {
+  Serial.println("TILT: Entering idle sleep mode");
   delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
   
   /* Now is the time to set the sleep mode. In the Atmega8 datasheet
@@ -268,21 +270,19 @@ void sleepNowTilt()         // here we put the arduino to idle sleep mode becaus
    * In all but the IDLE sleep modes only LOW can be used.
    */
 
-  //cli();            // enable interrupts
+  preSleep();
+
   attachInterrupt(0,wakeUpTilt, LOW); // use interrupt 0 (pin 2) and run function
                                      // wakeUpNow when pin 2 gets LOW 
-  preSleep();
   
   sleep_mode();            // here the device is actually put to sleep!!
                            // THE PROGRAM CONTINUES FROM HERE AFTER WAKING UP
-  postSleep();
-  
   sleep_disable();         // first thing after waking from sleep:
                            // disable sleep...
   detachInterrupt(0);      // disables interrupt 0 on pin 2 so the 
                            // wakeUpNow code will not be executed 
                            // during normal running time.
-  //sei();          // disable interrupts after waking up from sleep                          
+  postSleep();  
 }
 
 boolean checkMode() {
@@ -441,10 +441,9 @@ void checkSleepSerial() {
 
 void checkSleepTimer() {
    // check if it should go to sleep because of time
+//  Serial.print("Operating for ");
+//  Serial.println(tOperating);
   if (tOperating >= T_AWAKE_MAX) {
-      Serial.print("Operating for ");
-      Serial.println(tOperating);
-      Serial.println("TIMER: Entering WDT sleep mode");
       sleepNowTimer();     //Go into watchdog sleep mode
   }
 }
@@ -462,7 +461,6 @@ boolean isTiltActive() {
 
 void checkSleepTilt() {
   if ( isTiltActive() ) {
-      Serial.println("TILT: Entering idle sleep mode");
       sleepNowTilt();     // sleep function called here
   }
 }
