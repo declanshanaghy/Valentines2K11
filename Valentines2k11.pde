@@ -1,4 +1,6 @@
+#include <TimerOne.h>
 #include <avr/sleep.h>
+#include <avr/power.h>
 #include <avr/wdt.h>
 
 #ifndef cbi
@@ -17,12 +19,16 @@ int distanceSampleCount = 0;
 unsigned long tDistanceModeBegin = -1;
 
 int DIST_SENS_MIN = 19;
-int DIST_MODE_CHG = DIST_SENS_MIN * 2;
-int DIST_WAKE_WDT = DIST_SENS_MIN * 4;
+int DIST_MODE_CHG = 50;
+int DIST_WAKE_WDT = 50;
 int DIST_N_SAMPLE = 250;
 
-int T_AWAKE_MAX = 5000;   //Total time to stay awake, milliseconds
+int T_AWAKE_MAX = 50000;   //Total time to stay awake, milliseconds
 int T_MODE_HOLD = 2000;   //milliseconds
+
+int CA_LED_PWM_ON = 0;
+int CA_LED_PWM_OFF = 255;
+
 
 int MODE_A = 0;
 int MODE_B = 1;
@@ -30,18 +36,19 @@ int MODE_C = 2;
 int MODE_MAX = 2;
 int MODES[] = { MODE_A, MODE_B, MODE_C };
 
-int PIN_DIST           = 1;    // analog pin for reading the IR sensor
+int PIN_DIST           = 3;    // analog pin for reading the IR sensor
+int PIN_DIST_PWR       = 11;   // digital pin for provising power to the IR sensor
 int PIN_TILT           = 2;    // digital pin used for tilt switch (wakeup and sleep)
-int PIN_INDICATOR_LED  = 12;   // digital pin used for LED indicator
+int PIN_INDICATOR      = 10;   // digital pin used for LED indicator
 
-int R = 9;                      // RED LED connected to digital pin 9 for PWM
-int G = 10;                     // GRN LED connected to digital pin 10 for PWM
-int B = 11;                     // BLU LED connected to digital pin 11 for PWM
+int R = 3;                      // RED LED connected to digital pin 9 for PWM
+int G = 5;                      // GRN LED connected to digital pin 10 for PWM
+int B = 6;                      // BLU LED connected to digital pin 11 for PWM
 int LED_PINS[] = {R,G,B};       //PIN # for each color
 int LED_VALS[] = {0,0,0};       //PWM values for each LED
 
 int lightMode = MODES[0];          //Current light show mode
-int tLastWake = 0;                 //Time last mode change was initiated (used to determine how long till sleep)
+unsigned long tLastWake = 0;       //Time last mode change was initiated (used to determine how long till sleep)
 unsigned long tAwake = 0;          //Time unit has been awake
 unsigned long tOperating = 0;      //Time unit has been performing the current lightShow
 unsigned long tLastModeChange = 0;
@@ -49,28 +56,36 @@ unsigned long tLastModeChange = 0;
 void setup()
 {
   pinMode(PIN_TILT, INPUT);
-  pinMode(PIN_INDICATOR_LED, OUTPUT);
+  //Turn on internal pullup resistor for tilt switch
+  digitalWrite(PIN_TILT, HIGH);
+  
+  pinMode(PIN_DIST_PWR, OUTPUT);
+  digitalWrite(PIN_DIST_PWR, HIGH);
 
   Serial.begin(9600);
 
-  //Ensure the onboard LED is off                                    
-  //digitalWrite(13,LOW);
-
   MCUSR = 0;
   wdt_disable();  // disable watchdog on boot
-  
+
   postSleep();  
 }
 
 void loop() {
   if ( fWatchDog == 1 ) {
     fWatchDog = 0;
-    digitalWrite(PIN_INDICATOR_LED, HIGH);
-    int nextState = checkWDTWakeup();
-    digitalWrite(PIN_INDICATOR_LED, LOW);
 
-    Serial.print("nextState is ");
-    Serial.println(nextState);
+    pinMode(PIN_INDICATOR, OUTPUT);
+    digitalWrite(PIN_INDICATOR, HIGH);
+
+    pinMode(PIN_DIST_PWR, OUTPUT);
+    digitalWrite(PIN_DIST_PWR, HIGH);
+    delay(50);  //Give the IR driver time to turn on
+    
+    int nextState = checkWDTWakeup();
+    digitalWrite(PIN_INDICATOR, LOW);
+
+//    Serial.print("nextState is ");
+//    Serial.println(nextState);
       
     switch ( nextState ) {
       case -1:
@@ -117,7 +132,7 @@ void wakeUpTilt() {        // here the interrupt is handled after wakeup
   // timers and code using timers (serial.print and more...) will not work here.
   // we don't really need to execute any special functions here, since we
   // just want the thing to wake up
-  Serial.println("wakeUpNow");  
+//  Serial.println("wakeUpNow");  
 }
 
 //Check IR sensor reading, if something is within range. wake up. (return 1)
@@ -143,20 +158,51 @@ int checkWDTWakeup() {
 
 //Housekeeping before sleeping
 void preSleep() {
-  digitalWrite(PIN_INDICATOR_LED,LOW);
+  Serial.println("Pre sleep");
+  delay(100);
+
+//  analogWrite(R, CA_LED_PWM_OFF);
+//  analogWrite(G, CA_LED_PWM_OFF);
+//  analogWrite(B, CA_LED_PWM_OFF);
+  
+  Timer1.stop();
+  
+  pinMode(R, INPUT);
+  digitalWrite(R, HIGH);
+  pinMode(G, INPUT);
+  digitalWrite(G, HIGH);
+  pinMode(B, INPUT);
+  digitalWrite(B, HIGH);
+  
+  pinMode(PIN_INDICATOR, INPUT);
+  digitalWrite(PIN_INDICATOR, HIGH);
+  
+  pinMode(PIN_DIST_PWR, INPUT);
+  digitalWrite(PIN_DIST_PWR, HIGH);
 }
 
 void postSleep() {
+  Serial.println("Post sleep");
+  
+  pinMode(R, OUTPUT);
+  pinMode(G, OUTPUT);
+  pinMode(B, OUTPUT);
+  
   unsigned long n = millis();
   tLastWake = n;
   tLastModeChange = n;
-  digitalWrite(PIN_INDICATOR_LED,LOW);
+  Timer1.stop();
+
+  pinMode(PIN_INDICATOR, OUTPUT);
+  digitalWrite(PIN_INDICATOR, LOW);
+  
+  pinMode(PIN_DIST_PWR, OUTPUT);
+  digitalWrite(PIN_DIST_PWR, HIGH);
 }
 
 void sleepNowTimer()         // here we put the arduino to watchdog timer sleep mode because the run time passed a certain time.
 {
-  Serial.println("TIMER: Entering WDT sleep mode");
-  delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
+  preSleep();
 
   // CPU Sleep Modes 
   // SM2 SM1 SM0 Sleep Mode
@@ -189,7 +235,7 @@ void setupWatchdog(int ii) {
   if (ii > 7) bb|= (1<<5);
   bb|= (1<<WDCE);
   ww=bb;
-  Serial.println(ww);
+//  Serial.println(ww);
 
 
   MCUSR &= ~(1<<WDRF);
@@ -201,8 +247,9 @@ void setupWatchdog(int ii) {
 }
 
 void sleepNowWDT() {
+  Serial.println("TIMER: Entering WDT sleep mode");
   delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
-
+  
   cbi(ADCSRA,ADEN);                    // switch Analog to Digitalconverter OFF
 
   set_sleep_mode(SLEEP_MODE_PWR_DOWN); // sleep mode is set here
@@ -221,11 +268,12 @@ ISR(WDT_vect) {
   fWatchDog = 1;  // set WDT flag
 }
 
-void sleepNowTilt()         // here we put the arduino to idle sleep mode because the tilt switch was de-activated
+void sleepNowTilt()         // here we put the arduino to power down sleep mode because the tilt switch was de-activated
 {
   Serial.println("TILT: Entering idle sleep mode");
   delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
-  
+  preSleep();
+
   /* Now is the time to set the sleep mode. In the Atmega8 datasheet
    * http://www.atmel.com/dyn/resources/prod_documents/doc2486.pdf on page 35
    * there is a list of sleep modes which explains which clocks and 
@@ -245,10 +293,23 @@ void sleepNowTilt()         // here we put the arduino to idle sleep mode becaus
    * sleep mode: SLEEP_MODE_PWR_DOWN
    * 
    */  
+//  set_sleep_mode(SLEEP_MODE_PWR_DOWN);   // sleep mode is set here
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);   // sleep mode is set here
 
   sleep_enable();          // enables the sleep bit in the mcucr register
                            // so sleep is possible. just a safety pin 
+
+  //disable SPI during sleep
+//  int spi_save = SPCR;
+//  SPCR = 0;
+  
+  //power down everything
+//  power_adc_disable();
+//  power_spi_disable();
+//  power_timer0_disable();
+//  power_timer1_disable();
+//  power_timer2_disable();
+//  power_twi_disable();  
 
   /* Now it is time to enable an interrupt. We do it here so an 
    * accidentally pushed interrupt button doesn't interrupt 
@@ -270,8 +331,6 @@ void sleepNowTilt()         // here we put the arduino to idle sleep mode becaus
    * In all but the IDLE sleep modes only LOW can be used.
    */
 
-  preSleep();
-
   attachInterrupt(0,wakeUpTilt, LOW); // use interrupt 0 (pin 2) and run function
                                      // wakeUpNow when pin 2 gets LOW 
   
@@ -282,6 +341,12 @@ void sleepNowTilt()         // here we put the arduino to idle sleep mode becaus
   detachInterrupt(0);      // disables interrupt 0 on pin 2 so the 
                            // wakeUpNow code will not be executed 
                            // during normal running time.
+  //Enable all power
+//  power_all_enable();
+  
+  //Put spi back to original state
+//  SPCR = spi_save;
+  
   postSleep();  
 }
 
@@ -299,6 +364,9 @@ boolean checkMode() {
       
       if ( tDistanceModeBegin == -1 ) {
         tDistanceModeBegin = n;
+        Timer1.initialize(500000);             // Initialize timer1.
+        Timer1.pwm(PIN_INDICATOR, 127);        // setup pwm on pin 1,
+
 //        Serial.print("tDistanceModeBegin set to: ");
 //        Serial.println(tDistanceModeBegin);
       }
@@ -307,8 +375,6 @@ boolean checkMode() {
 //      Serial.print("tHolding is: ");
 //      Serial.println(tHolding);
         
-      digitalWrite(PIN_INDICATOR_LED, flashState(tHolding, 300));
-      
       if ( tHolding > T_MODE_HOLD ) {
         //Switch modes
         if ( lightMode == MODE_MAX )
@@ -331,7 +397,8 @@ boolean checkMode() {
     }
     else {
       tDistanceModeBegin = -1;
-      digitalWrite(PIN_INDICATOR_LED, LOW);
+      Timer1.stop();
+      digitalWrite(PIN_INDICATOR, LOW);
     }
     
     return false;
@@ -363,9 +430,26 @@ int calcAveragedIRDistance() {
   return d > 0 ? d : 32767;
 }
 
+int aH = 580;
+int aL = 300;
+float vH = 3.2;
+float vL = 0.5;
+float dH = 80;
+float dL = 10;
+float mtp = (float)(vH - vL) / (float)(aH - aL); //value from sensor * (2.7/260) - 260 discrete steps
 float calcIRDistance(boolean average, int nSamples) {
-  float volts = analogRead(PIN_DIST)*0.0048828125;   // value from sensor * (5/1024) - if running 3.3.volts then change 5 to 3.3
-  float rawDistance = 65*pow(volts, -1.10);          // worked out from graph 65 = theretical distance / (1/Volts)S - luckylarry.co.uk
+  //Range of IR sensor readings is 280,0.5v,10cm - 580,3.2v,80cm 
+  int alg = analogRead(PIN_DIST);
+
+  Serial.print("alg1 is: ");
+  Serial.println(alg);
+
+  float volts = alg*mtp;
+
+//  Serial.print("volts is: ");
+//  Serial.println(volts);
+  
+  float rawDistance = 15*pow(volts, -1.10);
 
 //  Serial.print("rawDistance is: ");
 //  Serial.println(rawDistance);
@@ -387,6 +471,8 @@ float calcIRDistance(boolean average, int nSamples) {
 //    Serial.print(distanceSampleCount);
 //    Serial.print(" = ");
 //    Serial.println(result);
+//    Serial.print("avgDistance is: ");
+//    Serial.println(result);
     
     distanceSampleSum = 0.0;
     distanceSampleCount = 0;    
@@ -400,43 +486,38 @@ float calcIRDistance(boolean average, int nSamples) {
   return -1;
 }
 
-int fadeAdj = 5;
 void procLightShow()  {       
-  //Calc the PWM value for each LED
-  if ( LED_VALS[0] >= 255 && fadeAdj > 0 ) {
-//    Serial.println("Switch fadeAdj down");
-    fadeAdj *= -1;  
+  switch (lightMode) {
+    case 0:
+      analogWrite(R, CA_LED_PWM_ON);
+      analogWrite(G, CA_LED_PWM_OFF);
+      analogWrite(B, CA_LED_PWM_OFF);
+      break;
+    case 1:
+      analogWrite(R, CA_LED_PWM_OFF);
+      analogWrite(G, CA_LED_PWM_ON);
+      analogWrite(B, CA_LED_PWM_OFF);
+      break;
+    case 2:
+      analogWrite(R, CA_LED_PWM_OFF);
+      analogWrite(G, CA_LED_PWM_OFF);
+      analogWrite(B, CA_LED_PWM_ON);
+      break;
   }
-  if ( LED_VALS[0] <= 0 && fadeAdj < 0 ) {
-//    Serial.println("Switch fadeAdj up");
-    fadeAdj *= -1;  
-  }
-  
-  for (int i=0; i<3; i++) {
-      LED_VALS[i] += fadeAdj;
-  } 
-
-  //Set the PWM value for each LED      
-  for (int i=0; i<3; i++) {
-      analogWrite(LED_PINS[i], LED_VALS[i]);         
-  } 
-  
-//  Serial.print("LED_VALS[0] = ");
-//  Serial.println(LED_VALS[0]);
 }
 
 void checkSleepSerial() {
   // Check for serial input for sleep the serial input
-  if (Serial.available()) {
-    int val = Serial.read();
-    if (val == 'S') {
-      Serial.println("Serial: Entering WDT sleep mode");
-      sleepNowTimer();     //Go into watchdog sleep mode
-    }
-    if (val == 'A') {
-      Serial.println("Hola Caracola"); // classic dummy message
-    }
-  }
+//  if (Serial.available()) {
+//    int val = Serial.read();
+//    if (val == 'S') {
+//      Serial.println("Serial: Entering WDT sleep mode");
+//      sleepNowTimer();     //Go into watchdog sleep mode
+//    }
+//    if (val == 'A') {
+//      Serial.println("Hola Caracola"); // classic dummy message
+//    }
+//  }
 }
 
 void checkSleepTimer() {
@@ -449,6 +530,8 @@ void checkSleepTimer() {
 }
 
 boolean isTiltActive() {
+  return false;
+  
   /***************Production mode****************/
   //HIGH == tilt switch indicates we should sleep
   //return digitalRead(PIN_TILT) == HIGH;
@@ -456,7 +539,7 @@ boolean isTiltActive() {
 
   /***************Test mode****************/
   //LOW == pushbutton switch indicates we should go to sleep
-  return digitalRead(PIN_TILT) == LOW;
+//  return digitalRead(PIN_TILT) == LOW;
 }
 
 void checkSleepTilt() {
