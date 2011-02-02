@@ -291,6 +291,9 @@ void sleepNowTilt()         // here we put the arduino to power down sleep mode 
 {
   Serial.println("TILT: Entering idle sleep mode");
   delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
+  
+  wdt_disable();
+  
   preSleep();
 
   /* Now is the time to set the sleep mode. In the Atmega8 datasheet
