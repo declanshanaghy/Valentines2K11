@@ -1,6 +1,8 @@
+#include <Wire.h>
 #include <avr/sleep.h>
 #include <avr/power.h>
 #include <avr/wdt.h>
+#include "LEDController.h"
 
 #ifndef cbi
 #define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
@@ -9,8 +11,8 @@
 #define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
 #endif
 
-int WDT_IDLE = 0;
-int WDT_OPERATING = 1;
+#define WDT_IDLE 0
+#define WDT_OPERATING 1
 int wdtType = WDT_OPERATING;
 int fWatchDog = 0;
 
@@ -20,42 +22,34 @@ float distanceSampleSum = 0.0;
 int distanceSampleCount = 0;
 unsigned long tDistanceModeBegin = -1;
 
-int DIST_SENS_MIN = 19;
-int DIST_MODE_CHG = 20;
-int DIST_WAKE_WDT = 70;
-int DIST_N_SAMPLE = 5;
+#define DIST_SENS_MIN 19
+#define DIST_MODE_CHG 10
+#define DIST_WAKE_WDT 20
+#define DIST_N_SAMPLE 5
+#define T_AWAKE_MAX 10000   //Total time to stay awake, milliseconds
 
-int T_AWAKE_MAX = 5000;   //Total time to stay awake, milliseconds
-
-int CA_LED_PWM_ON = 254;
-int CA_LED_PWM_OFF = 255;
-
-int MODE_A = 0;
-int MODE_B = 1;
-int MODE_C = 2;
-int MODE_MAX = 2;
-int MODES[] = { MODE_A, MODE_B, MODE_C };
-
-int PIN_DIST           = 3;    // analog pin for reading the IR sensor
-int PIN_DIST_PWR       = 11;   // digital pin for provising power to the IR sensor
-int PIN_TILT           = 2;    // digital pin used for tilt switch (wakeup and sleep)
-int PIN_INDICATOR      = 10;   // digital pin used for LED indicator
+#define PIN_DIST           3    // analog pin for reading the IR sensor
+#define PIN_DIST_PWR       11   // digital pin for provising power to the IR sensor
+#define PIN_TILT           2    // digital pin used for tilt switch (wakeup and sleep)
+#define PIN_INDICATOR      10   // digital pin used for LED indicator
 
 //****************************************************************
 // 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,5=500ms
 // 6=1 sec,7=2 sec, 8=4 sec, 9=8sec
-int WDT_1_SEC = 6;
-int WDT_2_SEC = 7;
-int WDT_4_SEC = 8;
-int WDT_8_SEC = 9;
+#define WDT_1_SEC 6
+#define WDT_2_SEC 7
+#define WDT_4_SEC 8
+#define WDT_8_SEC 9
 
-int R = 3;                      // RED LED connected to digital pin 9 for PWM
-int G = 5;                      // GRN LED connected to digital pin 10 for PWM
-int B = 6;                      // BLU LED connected to digital pin 11 for PWM
-int LED_PINS[] = {R,G,B};       //PIN # for each color
-int LED_VALS[] = {0,0,0};       //PWM values for each LED
+#define R 3
+#define G 6
+#define B 5
+LEDController lR(R);
+LEDController lG(G);
+LEDController lB(B); 
+LEDController* leds[] = {&lR,&lG,&lB};
 
-int lightMode = MODES[0];          //Current light show mode
+unsigned int lightMode = 0;          //Current light show mode
 unsigned long tLastWake = 0;       //Time last mode change was initiated (used to determine how long till sleep)
 unsigned long tAwake = 0;          //Time unit has been awake
 unsigned long tOperating = 0;      //Time unit has been performing the current lightShow
@@ -77,8 +71,66 @@ void setup()
   
   Serial.begin(9600);
 
+  LEDController *c;
+  for ( int i=0; i<3; i++ ) {
+    c = leds[i];
+    c->usingPWM = true;
+    c->analogHighValue = 255; 
+    c->analogMidValue = 127; 
+    c->analogLowValue = 0; 
+//    c->rampUpValue = 1; 
+//    c->rampDownValue = 1; 
+//    c->rampUpDelay = 20;
+//    c->rampDownDelay = 5;
+  }
+
+  setupLightShow();
+  
   postSleep();  
 }
+
+void setupLightShow() {
+  LEDController *c;
+  for ( int i=0; i<3; i++ ) {
+    c = leds[i];
+    c->action = TURN_HIGH; 
+  }
+  
+  switch (lightMode % 3) {
+    case 2:
+      lB.action = RAMP_CONT_HIGH_MID;
+      break;
+    case 1:
+      lG.action = RAMP_CONT_HIGH_MID;
+      break;
+    case 0:
+      lR.action = RAMP_CONT_HIGH_MID;
+      break;
+  }
+  
+  for ( int i=0; i<3; i++ ) {
+    c = leds[i];
+    c->takeAction();
+  }  
+}
+
+void disableLightShow() {
+  LEDController *c;
+  for ( int i=0; i<3; i++ ) {
+    c = leds[i];
+    c->action = TURN_HIGH; 
+    c->takeAction();
+  }  
+}
+
+void procLightShow()  {       
+  LEDController *c;
+  for ( int i=0; i<3; i++ ) {
+    c = leds[i];
+    c->takeAction();
+  }  
+}
+
 
 void enableIRSensor() {
   pinMode(PIN_INDICATOR, OUTPUT);
@@ -137,7 +189,7 @@ void procLoop() {
 }
 
 void procWDTOperating() {
-  Serial.println("procWDTOperating");
+//  Serial.println("procWDTOperating");
 
   enableIRSensor();
   checkMode();
@@ -145,7 +197,7 @@ void procWDTOperating() {
 }
 
 void procWDTIdle() {
-  Serial.println("procWDTIdle");
+//  Serial.println("procWDTIdle");
 
   enableIRSensor();
   int nextState = checkWDTWakeup();
@@ -205,9 +257,7 @@ void preSleep() {
 
   disableIRSensor();  
 
-  analogWrite(R, CA_LED_PWM_OFF);
-  analogWrite(G, CA_LED_PWM_OFF);
-  analogWrite(B, CA_LED_PWM_OFF);
+  disableLightShow();
 }
 
 void postSleep() {
@@ -217,6 +267,7 @@ void postSleep() {
   tLastWake = n;
   tLastModeChange = n;
 
+  setupLightShow();
   setupWatchdog(WDT_2_SEC, WDT_OPERATING);
 }
 
@@ -363,15 +414,13 @@ void checkMode() {
         
     if ( distance < DIST_MODE_CHG ) {
         //Switch modes
-        if ( lightMode == MODE_MAX )
-          lightMode = 0;
-        else
-          lightMode++;
-                
+        lightMode++;
         tLastModeChange = millis();
         
         Serial.print("lightMode changed to ");
         Serial.println(lightMode);  
+        
+        setupLightShow();
     }
     else {
       Serial.print("lightMode stays at ");
@@ -439,27 +488,6 @@ float calcIRDistance(boolean average, int nSamples) {
 //  }
   
   return -1;
-}
-
-
-void procLightShow()  {       
-  switch (lightMode) {
-    case 0:
-      analogWrite(R, CA_LED_PWM_ON);
-      analogWrite(G, CA_LED_PWM_OFF);
-      analogWrite(B, CA_LED_PWM_OFF);
-      break;
-    case 1:
-      analogWrite(R, CA_LED_PWM_OFF);
-      analogWrite(G, CA_LED_PWM_ON);
-      analogWrite(B, CA_LED_PWM_OFF);
-      break;
-    case 2:
-      analogWrite(R, CA_LED_PWM_OFF);
-      analogWrite(G, CA_LED_PWM_OFF);
-      analogWrite(B, CA_LED_PWM_ON);
-      break;
-  }
 }
 
 void checkSleepSerial() {
