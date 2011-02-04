@@ -26,7 +26,7 @@ unsigned long tDistanceModeBegin = -1;
 #define DIST_MODE_CHG 10
 #define DIST_WAKE_WDT 20
 #define DIST_N_SAMPLE 5
-#define T_AWAKE_MAX 10000   //Total time to stay awake, milliseconds
+#define T_AWAKE_MAX 5000   //Total time to stay awake, milliseconds
 
 #define PIN_DIST           3    // analog pin for reading the IR sensor
 #define PIN_DIST_PWR       11   // digital pin for provising power to the IR sensor
