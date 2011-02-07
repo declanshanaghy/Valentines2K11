@@ -57,6 +57,11 @@ unsigned long tAwake = 0;          //Time unit has been awake
 unsigned long tOperating = 0;      //Time unit has been performing the current lightShow
 unsigned long tLastModeChange = 0;
 
+#define DEBOUNCE_DELAY 200L    // the debounce time; increase if the output flickers
+unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
+int tiltState ;             // the current reading from the tilt switch
+int lastTiltState  = LOW;   // the previous reading from the tilt switch pin
+
 void setup()
 {
   pinMode(PIN_TILT, INPUT);
@@ -535,14 +540,32 @@ void checkSleepTimer() {
 boolean isTiltActive() {
 //  return false;
   
-  /***************Production mode****************/
-  //HIGH == tilt switch indicates we should sleep
-  return digitalRead(PIN_TILT) == HIGH;
+  int reading = digitalRead(PIN_TILT);
+//  Serial.print("Reading is: ");
+//  Serial.println(reading);
+  
+  // If the switch changed, due to noise or pressing:
+  if (reading != lastTiltState ) {
+    // reset the debouncing timer
+//    Serial.println("reset the debouncing timer");
+    lastDebounceTime = millis();
+  } 
+  
+  if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY) {
+    // whatever the reading is at, it's been there for longer
+    // than the debounce delay, so take it as the actual current state:
+    tiltState  = reading;
+//    Serial.print("tiltState  changed to: ");
+//    Serial.println(tiltState );
+  }
+  
+//  Serial.print("tiltState  == HIGH? ");
+//  Serial.println(tiltState  == HIGH);
 
-
-  /***************Test mode****************/
-  //LOW == pushbutton switch indicates we should go to sleep
-//  return digitalRead(PIN_TILT) == LOW;
+  lastTiltState  = reading;
+  
+  //HIGH == tilt switch indicates we should sleep (return true)
+  return tiltState  == HIGH;
 }
 
 void checkSleepTilt() {
