@@ -26,12 +26,14 @@ unsigned long tDistanceModeBegin = -1;
 #define DIST_MODE_CHG 10
 #define DIST_WAKE_WDT 20
 #define DIST_N_SAMPLE 5
-#define T_AWAKE_MAX 5000   //Total time to stay awake, milliseconds
+#define T_AWAKE_MAX 500000   //Total time to stay awake, milliseconds
 
+#define PIN_LIGHT          2    // analog pin for reading the photo diode sensor
 #define PIN_DIST           3    // analog pin for reading the IR sensor
 #define PIN_DIST_PWR       11   // digital pin for provising power to the IR sensor
 #define PIN_TILT           2    // digital pin used for tilt switch (wakeup and sleep)
 #define PIN_INDICATOR      10   // digital pin used for LED indicator
+#define PIN_LIGHT_PWR      12   // digital pin used for photo diode control
 
 //****************************************************************
 // 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,5=500ms
@@ -68,6 +70,9 @@ void setup()
   
   pinMode(PIN_INDICATOR, OUTPUT);
   digitalWrite(PIN_INDICATOR, LOW);
+
+  pinMode(PIN_LIGHT_PWR, OUTPUT);
+  digitalWrite(PIN_LIGHT_PWR, LOW);
   
   Serial.begin(9600);
 
@@ -87,6 +92,19 @@ void setup()
   setupLightShow();
   
   postSleep();  
+}
+
+void loop() {
+  if ( fWatchDog == 1 ) {
+    fWatchDog = 0;
+    if ( wdtType == WDT_OPERATING )
+      procWDTOperating();
+    else
+      procWDTIdle();
+  }
+  else {
+    procLoop();
+  }
 }
 
 void setupLightShow() {
@@ -131,7 +149,6 @@ void procLightShow()  {
   }  
 }
 
-
 void enableIRSensor() {
   pinMode(PIN_INDICATOR, OUTPUT);
   digitalWrite(PIN_INDICATOR, HIGH);
@@ -143,6 +160,15 @@ void enableIRSensor() {
   delay(60);  //Give the IR sensor time to come up to speed
 }
 
+void enableLightSensor() {
+  digitalWrite(PIN_LIGHT_PWR, HIGH);
+  delay(10);  //Give the IR sensor time to settle
+}  
+
+void disableLightSensor() {
+  digitalWrite(PIN_LIGHT_PWR, HIGH);
+}  
+
 void disableIRSensor() {
   cbi(ADCSRA,ADEN);                    // switch Analog to Digitalconverter OFF
 
@@ -151,19 +177,6 @@ void disableIRSensor() {
   
   pinMode(PIN_INDICATOR, OUTPUT);
   digitalWrite(PIN_INDICATOR, LOW);
-}
-
-void loop() {
-  if ( fWatchDog == 1 ) {
-    fWatchDog = 0;
-    if ( wdtType == WDT_OPERATING )
-      procWDTOperating();
-    else
-      procWDTIdle();
-  }
-  else {
-    procLoop();
-  }
 }
 
 void procLoop() {
@@ -190,6 +203,12 @@ void procLoop() {
 
 void procWDTOperating() {
 //  Serial.println("procWDTOperating");
+
+  enableLightSensor();
+  int light = analogRead(PIN_LIGHT);
+  Serial.print("Light is: ");
+  Serial.println(light);
+  disableLightSensor();
 
   enableIRSensor();
   checkMode();
