@@ -1,3 +1,4 @@
+#include <EEPROM.h>
 #include <Wire.h>
 #include <avr/sleep.h>
 #include <avr/power.h>
@@ -11,23 +12,7 @@
 #define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
 #endif
 
-#define WDT_IDLE 0
-#define WDT_OPERATING 1
-int wdtType = WDT_OPERATING;
-int fWatchDog = 0;
-
-//Variables for running distance calculation
-//TODO: Convert to use integer math
-float distanceSampleSum = 0.0;
-int distanceSampleCount = 0;
-unsigned long tDistanceModeBegin = -1;
-
-#define DIST_SENS_MIN 19
-#define DIST_MODE_CHG 10
-#define DIST_WAKE_WDT 20
-#define DIST_N_SAMPLE 5
-#define T_AWAKE_MAX 500000   //Total time to stay awake, milliseconds
-
+//I/O pin constants
 #define PIN_LIGHT          2    // analog pin for reading the photo diode sensor
 #define PIN_DIST           3    // analog pin for reading the IR sensor
 #define PIN_DIST_PWR       11   // digital pin for provising power to the IR sensor
@@ -35,7 +20,24 @@ unsigned long tDistanceModeBegin = -1;
 #define PIN_INDICATOR      10   // digital pin used for LED indicator
 #define PIN_LIGHT_PWR      12   // digital pin used for photo diode control
 
-//****************************************************************
+//Config constants
+#define CONFIG_LIGHTMODE   0
+#define CONFIG_LIGHTMAX    1
+#define CONFIG_LIGHTMIN    2
+
+//Operating constants
+#define WDT_IDLE          0
+#define WDT_OPERATING     1
+
+#define DIST_MODE_CHG     10
+#define DIST_WAKE_WDT     20
+#define DIST_N_SAMPLE     5
+
+#define T_AWAKE_MAX       500000L   //Total time to stay awake, milliseconds
+#define T_DEBOUNCE        200L       // the debounce time; increase if the output flickers
+#define T_LIGHT_SAMPLE    10L
+
+//Watchdog timers
 // 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,5=500ms
 // 6=1 sec,7=2 sec, 8=4 sec, 9=8sec
 #define WDT_1_SEC 6
@@ -43,6 +45,7 @@ unsigned long tDistanceModeBegin = -1;
 #define WDT_4_SEC 8
 #define WDT_8_SEC 9
 
+//LED control variables
 #define R 3
 #define G 6
 #define B 5
@@ -51,16 +54,30 @@ LEDController lG(G);
 LEDController lB(B); 
 LEDController* leds[] = {&lR,&lG,&lB};
 
-unsigned int lightMode = 0;          //Current light show mode
+//Lighting variables
+int lightMode = 0;                     //Current light show mode
+int lightMax = 600;                    //Light sensor reading when fully bright
+int lightMin = 270;                    //Light sensor reading when fully dark
+
+//Timing variables
+unsigned long tLastModeChange = 0;
 unsigned long tLastWake = 0;       //Time last mode change was initiated (used to determine how long till sleep)
 unsigned long tAwake = 0;          //Time unit has been awake
 unsigned long tOperating = 0;      //Time unit has been performing the current lightShow
-unsigned long tLastModeChange = 0;
 
-#define DEBOUNCE_DELAY 200L    // the debounce time; increase if the output flickers
-unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
-int tiltState ;             // the current reading from the tilt switch
-int lastTiltState  = LOW;   // the previous reading from the tilt switch pin
+//Tilt switch variables
+unsigned long tTiltDebounce = 0;     // The last time the output pin was toggled
+int tiltState = HIGH;                // The current reading from the tilt switch
+int lastTiltState  = LOW;            // The previous reading from the tilt switch pin
+
+//Timer variables
+int wdtType = WDT_OPERATING;
+int fWatchDog = 0;
+
+//Distance calculation variables
+float distanceSampleSum = 0.0;
+int distanceSampleCount = 0;
+unsigned long tDistanceModeBegin = -1;
 
 void setup()
 {
@@ -94,9 +111,49 @@ void setup()
 //    c->rampDownDelay = 5;
   }
 
+  readConfig();
+
   setupLightShow();
   
   postSleep();  
+}
+
+void readConfig() {
+  int v;
+  
+  v = EEPROM.read(CONFIG_LIGHTMODE);
+  if ( v != 255 )
+    lightMode = v;
+    
+//  v = EEPROM.read(CONFIG_LIGHTMAX);
+//  if ( v != 255 )
+//    lightMax = v*4;    
+//    
+//  v = EEPROM.read(CONFIG_LIGHTMIN);
+//  if ( v != 255 )
+//    lightMin = v*4;
+    
+//  Serial.println("readConfig");
+//  Serial.print("lightMode: ");
+//  Serial.println(lightMode);
+//  Serial.print("lightMax: ");
+//  Serial.println(lightMax);
+//  Serial.print("lightMin: ");
+//  Serial.println(lightMin);
+}
+
+void saveConfig() {
+  EEPROM.write(CONFIG_LIGHTMODE, lightMode);
+  EEPROM.write(CONFIG_LIGHTMAX, lightMax/4);
+  EEPROM.write(CONFIG_LIGHTMIN, lightMin/4);
+  
+//  Serial.println("saveConfig");
+//  Serial.print("lightMode: ");
+//  Serial.println(lightMode);
+//  Serial.print("lightMax: ");
+//  Serial.println(lightMax);
+//  Serial.print("lightMin: ");
+//  Serial.println(lightMin);  
 }
 
 void loop() {
@@ -135,6 +192,8 @@ void setupLightShow() {
     c = leds[i];
     c->takeAction();
   }  
+  
+  saveConfig();
 }
 
 void disableLightShow() {
@@ -190,10 +249,10 @@ void procLoop() {
   tOperating = n - tLastModeChange;
   
   // display information about the counter
-  if ( tAwake % 1000 == 0 ) {
-    Serial.print("Awake for ");
-    Serial.println(tAwake);
-  }
+//  if ( tAwake % 1000 == 0 ) {
+//    Serial.print("Awake for ");
+//    Serial.println(tAwake);
+//  }
 //    Serial.print("tLastWake is ");
 //    Serial.println(tLastWake);
 //    Serial.print("tLastModeChange is ");
@@ -206,14 +265,29 @@ void procLoop() {
   checkSleep();
 }
 
+unsigned long tLastLight = 0;
 void procWDTOperating() {
 //  Serial.println("procWDTOperating");
 
-  enableLightSensor();
-  int light = analogRead(PIN_LIGHT);
-  Serial.print("Light is: ");
-  Serial.println(light);
-  disableLightSensor();
+  unsigned long n = millis();
+  
+  if ( n - tLastLight > T_LIGHT_SAMPLE ) {
+    enableLightSensor();
+    int light = analogRead(PIN_LIGHT);
+    Serial.print("Light is: ");
+    Serial.println(light);
+    disableLightSensor();
+    tLastLight = n;
+    
+    if ( light < lightMin ) {
+      lightMin = light;
+      saveConfig();
+    }
+    else if ( light > lightMax ) {
+      lightMax = light;
+      saveConfig();
+    }
+  }
 
   enableIRSensor();
   checkMode();
@@ -260,8 +334,8 @@ int checkWDTWakeup() {
   int distance = calcAveragedIRDistance();
 //  int distance = calcRawIRDistance();
   
-  Serial.print("WDT distance is: ");
-  Serial.println(distance);
+//  Serial.print("WDT distance is: ");
+//  Serial.println(distance);
   
   if ( distance > 0 && distance < DIST_WAKE_WDT ) {
     Serial.println("WDT wake up!");
@@ -433,8 +507,8 @@ void checkMode() {
   int distance = calcAveragedIRDistance();
   
   if ( distance > 0 ) {
-    Serial.print("Distance is: ");
-    Serial.println(distance);
+//    Serial.print("Distance is: ");
+//    Serial.println(distance);
         
     if ( distance < DIST_MODE_CHG ) {
         //Switch modes
@@ -446,10 +520,10 @@ void checkMode() {
         
         setupLightShow();
     }
-    else {
-      Serial.print("lightMode stays at ");
-      Serial.println(lightMode);  
-    }
+//    else {
+//      Serial.print("lightMode stays at ");
+//      Serial.println(lightMode);  
+//    }
   }
 }
 
@@ -538,8 +612,9 @@ void checkSleepTimer() {
 }
 
 boolean isTiltActive() {
-//  return false;
+  return false;
   
+  unsigned long n = millis();
   int reading = digitalRead(PIN_TILT);
 //  Serial.print("Reading is: ");
 //  Serial.println(reading);
@@ -548,10 +623,10 @@ boolean isTiltActive() {
   if (reading != lastTiltState ) {
     // reset the debouncing timer
 //    Serial.println("reset the debouncing timer");
-    lastDebounceTime = millis();
+    tTiltDebounce = n;
   } 
   
-  if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY) {
+  if ((n - tTiltDebounce) > T_DEBOUNCE) {
     // whatever the reading is at, it's been there for longer
     // than the debounce delay, so take it as the actual current state:
     tiltState  = reading;
