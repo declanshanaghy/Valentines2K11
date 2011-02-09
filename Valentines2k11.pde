@@ -12,12 +12,12 @@
 #define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
 #endif
 
-//I/O pin constants
+//IO pin constants
 #define PIN_LIGHT          2    // analog pin for reading the photo diode sensor
 #define PIN_DIST           3    // analog pin for reading the IR sensor
-#define PIN_DIST_PWR       11   // digital pin for provising power to the IR sensor
+#define PIN_DIST_PWR       11   // digital pin for providing power to the IR sensor
 #define PIN_TILT           2    // digital pin used for tilt switch (wakeup and sleep)
-#define PIN_INDICATOR      10   // digital pin used for LED indicator
+#define PIN_INDICATOR      10   // digital pin used for IR sensor control
 #define PIN_LIGHT_PWR      12   // digital pin used for photo diode control
 
 //Config constants
@@ -28,6 +28,16 @@
 //Operating constants
 #define WDT_IDLE          0
 #define WDT_OPERATING     1
+
+#define LED_ON_FULL       127
+#define LED_OFF_FULL      255
+#define LED_OFF_MIN_PCT   10
+#define LED_LOW_VAL       LED_ON_FULL
+#define LED_HIGH_VAL      LED_OFF_FULL
+
+#define LED_MID_VAL       (LED_HIGH_VAL-LED_LOW_VAL)/2
+#define LED_QHIGH_VAL     LED_MID_VAL+(LED_MID_VAL/2)
+#define LED_QLOW_VAL      LED_MID_VAL-(LED_MID_VAL/2)
 
 #define DIST_MODE_CHG     10
 #define DIST_WAKE_WDT     20
@@ -40,6 +50,8 @@
 //Watchdog timers
 // 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,5=500ms
 // 6=1 sec,7=2 sec, 8=4 sec, 9=8sec
+#define WDT_Q_SEC 4
+#define WDT_H_SEC 5
 #define WDT_1_SEC 6
 #define WDT_2_SEC 7
 #define WDT_4_SEC 8
@@ -55,9 +67,10 @@ LEDController lB(B);
 LEDController* leds[] = {&lR,&lG,&lB};
 
 //Lighting variables
-int lightMode = 0;                     //Current light show mode
-int lightMax = 600;                    //Light sensor reading when fully bright
-int lightMin = 270;                    //Light sensor reading when fully dark
+int lightMode = 0;                         //Current light show mode
+int lightMax = 700;                        //Light sensor reading when fully bright
+int lightMin = 100;                        //Light sensor reading when fully dark
+int lightCur = (lightMax - lightMin) / 2;  //Latest light sensor reading
 
 //Timing variables
 unsigned long tLastModeChange = 0;
@@ -98,24 +111,37 @@ void setup()
   
   Serial.begin(9600);
 
+  readConfig();
+
   LEDController *c;
   for ( int i=0; i<3; i++ ) {
     c = leds[i];
     c->usingPWM = true;
-    c->analogHighValue = 255; 
-    c->analogMidValue = 127; 
-    c->analogLowValue = 0; 
-//    c->rampUpValue = 1; 
-//    c->rampDownValue = 1; 
-//    c->rampUpDelay = 20;
-//    c->rampDownDelay = 5;
+    c->analogHighValue = LED_HIGH_VAL; 
+    c->analogMidValue = LED_MID_VAL;
+    c->analogLowValue = LED_LOW_VAL;
+    c->rampUpValue = 1;
+    c->rampDownValue = 1;
+    c->rampUpDelay = 10;
+    c->rampDownDelay = 10;
   }
-
-  readConfig();
 
   setupLightShow();
   
   postSleep();  
+}
+
+void loop() {
+  if ( fWatchDog == 1 ) {
+    fWatchDog = 0;
+    if ( wdtType == WDT_OPERATING )
+      procWDTOperating();
+    else
+      procWDTIdle();
+  }
+  else {
+    procLoop();
+  }
 }
 
 void readConfig() {
@@ -156,35 +182,62 @@ void saveConfig() {
 //  Serial.println(lightMin);  
 }
 
-void loop() {
-  if ( fWatchDog == 1 ) {
-    fWatchDog = 0;
-    if ( wdtType == WDT_OPERATING )
-      procWDTOperating();
-    else
-      procWDTIdle();
-  }
-  else {
-    procLoop();
-  }
-}
-
+#define L_MAX 8
 void setupLightShow() {
   LEDController *c;
   for ( int i=0; i<3; i++ ) {
     c = leds[i];
-    c->action = TURN_HIGH; 
+    c->action = TURN_HIGH;  //Turn off
+    c->takeAction();
   }
+
+  lightMode %= L_MAX;
+  Serial.print("lightMode is: ");
+  Serial.println(lightMode);  
   
-  switch (lightMode % 3) {
+  switch (lightMode) {
+    case 7:
+      lB.setLEDBrightness(LED_HIGH_VAL);
+      lG.setLEDBrightness(LED_HIGH_VAL);
+      lR.setLEDBrightness(LED_HIGH_VAL);
+      lB.action = RAMP_CONT_HIGH_LOW;
+      lG.action = RAMP_CONT_HIGH_LOW;
+      lR.action = RAMP_CONT_HIGH_LOW;
+      break;
+    case 6:
+      lB.setLEDBrightness(LED_HIGH_VAL);
+      lG.setLEDBrightness(LED_MID_VAL);
+      lR.setLEDBrightness(LED_LOW_VAL);
+      lB.action = RAMP_CONT_HIGH_LOW;
+      lG.action = RAMP_CONT_HIGH_LOW;
+      lR.action = RAMP_CONT_HIGH_LOW;
+      break;
+    case 5:
+      lB.setLEDBrightness(LED_LOW_VAL);
+      lR.setLEDBrightness(LED_HIGH_VAL);
+      lB.action = RAMP_CONT_HIGH_LOW;
+      lR.action = RAMP_CONT_HIGH_LOW;
+      break;
+    case 4:
+      lG.setLEDBrightness(LED_LOW_VAL);
+      lB.setLEDBrightness(LED_HIGH_VAL);
+      lG.action = RAMP_CONT_HIGH_LOW;
+      lB.action = RAMP_CONT_HIGH_LOW;
+      break;
+    case 3:
+      lR.setLEDBrightness(LED_LOW_VAL);
+      lG.setLEDBrightness(LED_HIGH_VAL);
+      lR.action = RAMP_CONT_HIGH_LOW;
+      lG.action = RAMP_CONT_HIGH_LOW;
+      break;
     case 2:
-      lB.action = RAMP_CONT_HIGH_MID;
+      lB.action = RAMP_CONT_HIGH_LOW;
       break;
     case 1:
-      lG.action = RAMP_CONT_HIGH_MID;
+      lG.action = RAMP_CONT_HIGH_LOW;
       break;
     case 0:
-      lR.action = RAMP_CONT_HIGH_MID;
+      lR.action = RAMP_CONT_HIGH_LOW;
       break;
   }
   
@@ -230,7 +283,7 @@ void enableLightSensor() {
 }  
 
 void disableLightSensor() {
-  digitalWrite(PIN_LIGHT_PWR, HIGH);
+  digitalWrite(PIN_LIGHT_PWR, LOW);
 }  
 
 void disableIRSensor() {
@@ -269,30 +322,74 @@ unsigned long tLastLight = 0;
 void procWDTOperating() {
 //  Serial.println("procWDTOperating");
 
-  unsigned long n = millis();
-  
-  if ( n - tLastLight > T_LIGHT_SAMPLE ) {
-    enableLightSensor();
-    int light = analogRead(PIN_LIGHT);
-    Serial.print("Light is: ");
-    Serial.println(light);
-    disableLightSensor();
-    tLastLight = n;
-    
-    if ( light < lightMin ) {
-      lightMin = light;
-      saveConfig();
-    }
-    else if ( light > lightMax ) {
-      lightMax = light;
-      saveConfig();
-    }
-  }
+    //Not using the light sensor yet.
+//  unsigned long n = millis();
+//  if ( n - tLastLight > T_LIGHT_SAMPLE ) {
+//    enableLightSensor();
+//    lightCur = analogRead(PIN_LIGHT);
+//    disableLightSensor();
+//    Serial.print("lightCur is: ");
+//    Serial.println(lightCur);
+//    
+//    if ( lightCur < lightMin ) {
+//      lightMin = lightCur;
+//      saveConfig();
+//    }
+//    else if ( lightCur > lightMax ) {
+//      lightMax = lightCur;
+//      saveConfig();
+//    }
+//
+//    mapLEDVals();
+//    tLastLight = n;
+//  }
 
   enableIRSensor();
   checkMode();
   disableIRSensor();
 }
+
+//int invertLightVal(int v) {
+//  return (int)((1/(float)v)*100000);
+//}
+//
+//void mapLEDVals() {
+//  Serial.print("lightMax: ");
+//  Serial.println(lightMax);
+//  Serial.print("lightMin: ");
+//  Serial.println(lightMin);
+//  
+//  if ( lightMax > lightMin ) {
+//    //Invert the values for the mapping fn.
+//    lightMax = invertLightVal(lightMax);
+//    lightMin = invertLightVal(lightMin);
+//    
+//    Serial.println("INVERT LIGHT");
+//    Serial.print("lightMax: ");
+//    Serial.println(lightMax);
+//    Serial.print("lightMin: ");
+//    Serial.println(lightMin);      
+//  }
+//  
+//  int v = invertLightVal(lightCur);
+//  int vdash = map(v, lightMax, lightMin, LED_LOW_VAL, LED_HIGH_VAL);
+//  int m = (LED_HIGH_VAL - v) / 2;
+//  
+//  LEDController *c;
+//  for ( int i=0; i<3; i++ ) {
+//    c = leds[i];
+//    c->analogHighValue = LED_HIGH_VAL; 
+//    c->analogMidValue = m;
+//    c->analogLowValue = vdash;
+//  }
+//  
+//  Serial.print("h,m,v: ");
+//  Serial.print(LED_HIGH_VAL);
+//  Serial.print(", ");
+//  Serial.print(m);
+//  Serial.print(", ");
+//  Serial.println(v);
+//}
 
 void procWDTIdle() {
 //  Serial.println("procWDTIdle");
@@ -366,7 +463,7 @@ void postSleep() {
   tLastModeChange = n;
 
   setupLightShow();
-  setupWatchdog(WDT_2_SEC, WDT_OPERATING);
+  setupWatchdog(WDT_H_SEC, WDT_OPERATING);
 }
 
 void sleepNowTimer()         // here we put the arduino to watchdog timer sleep mode because the run time passed a certain time.
@@ -514,9 +611,6 @@ void checkMode() {
         //Switch modes
         lightMode++;
         tLastModeChange = millis();
-        
-        Serial.print("lightMode changed to ");
-        Serial.println(lightMode);  
         
         setupLightShow();
     }
