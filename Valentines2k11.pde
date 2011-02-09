@@ -43,7 +43,7 @@
 #define DIST_WAKE_WDT     20
 #define DIST_N_SAMPLE     5
 
-#define T_AWAKE_MAX       500000L   //Total time to stay awake, milliseconds
+#define T_AWAKE_MAX       30000L     //Total time to stay awake, milliseconds
 #define T_DEBOUNCE        200L       // the debounce time; increase if the output flickers
 #define T_LIGHT_SAMPLE    10L
 
@@ -463,7 +463,7 @@ void postSleep() {
   tLastModeChange = n;
 
   setupLightShow();
-  setupWatchdog(WDT_H_SEC, WDT_OPERATING);
+  setupWatchdog(WDT_2_SEC, WDT_OPERATING);
 }
 
 void sleepNowTimer()         // here we put the arduino to watchdog timer sleep mode because the run time passed a certain time.
@@ -706,7 +706,7 @@ void checkSleepTimer() {
 }
 
 boolean isTiltActive() {
-  return false;
+//  return false;
   
   unsigned long n = millis();
   int reading = digitalRead(PIN_TILT);
