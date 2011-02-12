@@ -41,7 +41,7 @@ int ledQLowVal = ledMidVal-(ledMidVal/2);
 #define DIST_WAKE_WDT     60
 #define DIST_N_SAMPLE     5
 
-#define T_AWAKE_MAX       120000L     //Total time to stay awake, milliseconds
+#define T_AWAKE_MAX       5000L     //Total time to stay awake, milliseconds
 #define T_DEBOUNCE        1000L       // the debounce time; increase if the output flickers
 
 //Watchdog timers
@@ -113,7 +113,7 @@ void setup()
   
   Serial.begin(9600);
 
-  readConfig();
+//  readConfig();
 
   LEDController *c;
   for ( int i=0; i<3; i++ ) {
@@ -447,7 +447,7 @@ int checkWDTWakeup() {
 //  Serial.println(distance);
   
   if ( distance > 0 && distance < DIST_WAKE_WDT ) {
-    Serial.println("WDT wake up!");
+//    Serial.println("WDT wake up!");
     return 1;
   }
   
@@ -537,7 +537,7 @@ void sleepNowWDT() {
 //  Serial.println("TIMER: Entering WDT sleep mode");
 //  delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
   
-  cbi(ADCSRA,ADEN);                    // switch ADC OFF
+  cbi(ADCSRA,ADEN);                    // switch setup OFF
 
   set_sleep_mode(SLEEP_MODE_PWR_DOWN); // sleep mode is set here
   sleep_enable();
