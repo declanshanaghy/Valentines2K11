@@ -22,8 +22,6 @@
 
 //Config constants
 #define CONFIG_LIGHTMODE   0
-#define CONFIG_LIGHTMAX    1
-#define CONFIG_LIGHTMIN    2
 
 //Operating constants
 #define WDT_IDLE          0
@@ -31,6 +29,7 @@
 
 #define LED_ON_FULL       0
 #define LED_OFF_FULL      255
+#define LED_OFF_FADEMAX   245
 #define LED_MID           (LED_OFF_FULL-LED_ON_FULL)/2
 int ledLowVal = LED_ON_FULL;
 int ledHighVal = LED_OFF_FULL;
@@ -39,12 +38,11 @@ int ledQHighVal = ledMidVal+(ledMidVal/2);
 int ledQLowVal = ledMidVal-(ledMidVal/2);
 
 #define DIST_MODE_CHG     10
-#define DIST_WAKE_WDT     20
+#define DIST_WAKE_WDT     60
 #define DIST_N_SAMPLE     5
 
-#define T_AWAKE_MAX       300000L     //Total time to stay awake, milliseconds
-#define T_DEBOUNCE        200L       // the debounce time; increase if the output flickers
-#define T_LIGHT_SAMPLE    100L
+#define T_AWAKE_MAX       120000L     //Total time to stay awake, milliseconds
+#define T_DEBOUNCE        1000L       // the debounce time; increase if the output flickers
 
 //Watchdog timers
 // 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,5=500ms
@@ -82,12 +80,14 @@ unsigned long tOperating = 0;      //Time unit has been performing the current l
 
 //Tilt switch variables
 unsigned long tTiltDebounce = 0;     // The last time the output pin was toggled
-int tiltState = HIGH;                // The current reading from the tilt switch
+int tiltState = LOW;                // The current reading from the tilt switch
 int lastTiltState  = LOW;            // The previous reading from the tilt switch pin
+boolean debouncing = false;
 
-//Timer variables
+//State variables
 int wdtType = WDT_OPERATING;
 int fWatchDog = 0;
+boolean sleeping = true;
 
 //Distance calculation variables
 float distanceSampleSum = 0.0;
@@ -129,7 +129,6 @@ void setup()
   }
 
   setupLightShow();
-  
   postSleep();  
 }
 
@@ -153,35 +152,17 @@ void readConfig() {
   if ( v != 255 )
     lightMode = v;
     
-//  v = EEPROM.read(CONFIG_LIGHTMAX);
-//  if ( v != 255 )
-//    lightMax = v*4;    
-//    
-//  v = EEPROM.read(CONFIG_LIGHTMIN);
-//  if ( v != 255 )
-//    lightMin = v*4;
-    
 //  Serial.println("readConfig");
 //  Serial.print("lightMode: ");
 //  Serial.println(lightMode);
-//  Serial.print("lightMax: ");
-//  Serial.println(lightMax);
-//  Serial.print("lightMin: ");
-//  Serial.println(lightMin);
 }
 
 void saveConfig() {
   EEPROM.write(CONFIG_LIGHTMODE, lightMode);
-  EEPROM.write(CONFIG_LIGHTMAX, lightMax/4);
-  EEPROM.write(CONFIG_LIGHTMIN, lightMin/4);
   
 //  Serial.println("saveConfig");
 //  Serial.print("lightMode: ");
 //  Serial.println(lightMode);
-//  Serial.print("lightMax: ");
-//  Serial.println(lightMax);
-//  Serial.print("lightMin: ");
-//  Serial.println(lightMin);  
 }
 
 #define L_MAX 8
@@ -190,19 +171,14 @@ void setupLightShow() {
   for ( int i=0; i<3; i++ ) {
     c = leds[i];
     c->setLEDBrightness(LED_OFF_FULL);
-    c->takeAction();
     c->update = false;
   }
 
   lightMode %= L_MAX;
-  Serial.print("lightMode is: ");
-  Serial.println(lightMode);  
+//  Serial.print("lightMode is: ");
+//  Serial.println(lightMode);  
   
   switch (lightMode) {
-    case -1:
-      //Special test mode
-      lR.setLEDBrightness(ledLowVal);
-      break;
     case 7:
       lB.setLEDBrightness(ledHighVal);
       lG.setLEDBrightness(ledHighVal);
@@ -271,13 +247,32 @@ void setupLightShow() {
   saveConfig();
 }
 
+void enableLightShow() {
+//  Serial.println("enableLightShow");
+
+  //Enable the led pins
+  pinMode(R, OUTPUT);
+  pinMode(G, OUTPUT);
+  pinMode(B, OUTPUT);
+}
+
 void disableLightShow() {
+//  Serial.println("disableLightShow");
+  
   LEDController *c;
   for ( int i=0; i<3; i++ ) {
     c = leds[i];
-    c->action = TURN_HIGH; 
-    c->takeAction();
+    c->setLEDBrightness(LED_OFF_FULL);
+    c->update = false;
   }  
+  
+  //Disable the led pins
+  pinMode(R, INPUT);
+  digitalWrite(R, HIGH);
+  pinMode(G, INPUT);
+  digitalWrite(R, HIGH);
+  pinMode(B, INPUT);
+  digitalWrite(R, HIGH);
 }
 
 void procLightShow()  {       
@@ -305,8 +300,11 @@ void procLoop() {
 //    Serial.print("Operating for ");
 //    Serial.println(tOperating);
 
-  procLightShow();
+  if ( !debouncing && !isTiltActive() && sleeping ) {
+    postSleep();  
+  }
 
+  procLightShow();
   checkSleep();
 }
 
@@ -346,15 +344,6 @@ void procWDTOperating() {
 //  Serial.println(lightCur);
   mapLEDVals();
 
-//  if ( lightCur < lightMin ) {
-//    lightMin = lightCur;
-//    saveConfig();
-//  }
-//  else if ( lightCur > lightMax ) {
-//    lightMax = lightCur;
-//    saveConfig();
-//  }
-  
   enableIRSensor();
   checkMode();
   disableIRSensor();
@@ -387,8 +376,8 @@ void mapLEDVals() {
 //int ledQLowVal = ledMidVal-(ledMidVal/2);
 
   int v = invertLightVal(lightCur);
-  ledLowVal = map(v, lightMaxD, lightMinD, LED_ON_FULL, LED_OFF_FULL);
-  ledHighVal = LED_OFF_FULL;
+  ledLowVal = map(v, lightMaxD, lightMinD, LED_ON_FULL, LED_OFF_FADEMAX);
+  ledHighVal = LED_OFF_FADEMAX;
 
   ledMidVal =  ledHighVal-((ledHighVal-ledLowVal)/2);
   ledQHighVal = ledMidVal+(ledMidVal/2);
@@ -402,16 +391,16 @@ void mapLEDVals() {
     c->analogLowValue = ledLowVal;
     
     //Ramp delays also have to be set according to the light range.
-    c->rampUpDelay = 10;
-    c->rampDownDelay = 10;
+    c->rampUpDelay = 2550 / (ledHighVal - ledLowVal);
+    c->rampDownDelay = c->rampUpDelay;
   }
   
-  Serial.print("h,m,l: ");
-  Serial.print(ledHighVal);
-  Serial.print(", ");
-  Serial.print(ledMidVal);
-  Serial.print(", ");
-  Serial.println(ledLowVal);
+//  Serial.print("h,m,l: ");
+//  Serial.print(ledHighVal);
+//  Serial.print(", ");
+//  Serial.print(ledMidVal);
+//  Serial.print(", ");
+//  Serial.println(ledLowVal);
 }
 
 void procWDTIdle() {
@@ -444,7 +433,7 @@ void wakeUpTilt() {
   // timers and code using timers (serial.print and more...) will not work here.
   // we don't really need to execute any special functions here, since we
   // just want the thing to wake up
-//  Serial.println("wakeUpNow");  
+//  Serial.println("wakingup = true");  
 }
 
 //Check IR sensor reading, if something is within range. wake up. (return 1)
@@ -470,23 +459,33 @@ int checkWDTWakeup() {
 
 //Housekeeping before sleeping
 void preSleep() {
-  Serial.println("Pre sleep");
+//  Serial.println("Pre sleep called");
+  if ( !sleeping ) {
+    sleeping = true;
+    
+    disableLightShow();
+    disableLightSensor();  
+    disableIRSensor();  
+  
+//    Serial.println("Pre sleep took action");
+  }
   delay(100);
-
-  disableIRSensor();  
-
-  disableLightShow();
 }
 
 void postSleep() {
-  Serial.println("Post sleep");
+//  Serial.println("Post sleep called");
+  if ( sleeping ) {
+    sleeping = false;
+    unsigned long n = millis();
+    tLastWake = n;
+    tLastModeChange = n;
   
-  unsigned long n = millis();
-  tLastWake = n;
-  tLastModeChange = n;
-
-  setupLightShow();
-  setupWatchdog(WDT_H_SEC, WDT_OPERATING);
+    setupWatchdog(WDT_2_SEC, WDT_OPERATING);
+    setupLightShow();
+    enableLightShow();  
+    
+//    Serial.println("Post sleep took action");
+  }
 }
 
 void sleepNowTimer()         // here we put the arduino to watchdog timer sleep mode because the run time passed a certain time.
@@ -535,10 +534,10 @@ void setupWatchdog(int ii, int t) {
 }
 
 void sleepNowWDT() {
-  Serial.println("TIMER: Entering WDT sleep mode");
-  delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
+//  Serial.println("TIMER: Entering WDT sleep mode");
+//  delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
   
-  cbi(ADCSRA,ADEN);                    // switch Analog to Digitalconverter OFF
+  cbi(ADCSRA,ADEN);                    // switch ADC OFF
 
   set_sleep_mode(SLEEP_MODE_PWR_DOWN); // sleep mode is set here
   sleep_enable();
@@ -546,7 +545,7 @@ void sleepNowWDT() {
   sleep_mode();                        // System sleeps here
 
   sleep_disable();                     // System continues execution here when watchdog timed out 
-  sbi(ADCSRA,ADEN);                    // switch Analog to Digitalconverter ON
+  sbi(ADCSRA,ADEN);                    // switch ADC ON
 }
 
 //****************************************************************  
@@ -558,10 +557,12 @@ ISR(WDT_vect) {
 
 void sleepNowTilt()         // here we put the arduino to power down sleep mode because the tilt switch was de-activated
 {
-  Serial.println("TILT: Entering idle sleep mode");
-  delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
+//  Serial.println("TILT: Entering idle sleep mode");
+//  delay(100);     // this delay is needed, the sleep function may provoke a serial error otherwise!!
   
   wdt_disable();
+  
+  cbi(ADCSRA,ADEN);                    // switch ADC OFF
   
   preSleep();
 
@@ -619,8 +620,8 @@ void sleepNowTilt()         // here we put the arduino to power down sleep mode 
   detachInterrupt(0);      // disables interrupt 0 on pin 2 so the 
                            // wakeUpNow code will not be executed 
                            // during normal running time.  
-                           
-  postSleep();  
+
+  sbi(ADCSRA,ADEN);                    // switch ADC ON
 }
 
 void checkMode() {
@@ -724,7 +725,8 @@ void checkSleepTimer() {
 }
 
 boolean isTiltActive() {
-  return false;
+//  //Uncomment to disable the tile switch and leave unit always on.
+//  return false;
   
   unsigned long n = millis();
   int reading = digitalRead(PIN_TILT);
@@ -736,6 +738,7 @@ boolean isTiltActive() {
     // reset the debouncing timer
 //    Serial.println("reset the debouncing timer");
     tTiltDebounce = n;
+    debouncing = true;
   } 
   
   if ((n - tTiltDebounce) > T_DEBOUNCE) {
@@ -744,6 +747,7 @@ boolean isTiltActive() {
     tiltState  = reading;
 //    Serial.print("tiltState  changed to: ");
 //    Serial.println(tiltState );
+    debouncing = false;
   }
   
 //  Serial.print("tiltState  == HIGH? ");
