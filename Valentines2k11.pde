@@ -41,7 +41,7 @@ int ledQLowVal = ledMidVal-(ledMidVal/2);
 #define DIST_WAKE_WDT     60
 #define DIST_N_SAMPLE     5
 
-#define T_AWAKE_MAX       5000L     //Total time to stay awake, milliseconds
+#define T_AWAKE_MAX       120000L     //Total time to stay awake, milliseconds
 #define T_DEBOUNCE        1000L       // the debounce time; increase if the output flickers
 
 //Watchdog timers
@@ -507,7 +507,7 @@ void sleepNowTimer()         // here we put the arduino to watchdog timer sleep 
   sbi( SMCR,SM1 );     // power down mode
   cbi( SMCR,SM2 );     // power down mode
 
-  setupWatchdog(WDT_4_SEC, WDT_IDLE);  
+  setupWatchdog(WDT_8_SEC, WDT_IDLE);  
   
   sleepNowWDT();
 }
