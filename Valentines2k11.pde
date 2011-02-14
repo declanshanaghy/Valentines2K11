@@ -37,8 +37,8 @@ int ledMidVal =  ledHighVal-((ledHighVal-ledLowVal)/2);
 int ledQHighVal = ledMidVal+(ledMidVal/2);
 int ledQLowVal = ledMidVal-(ledMidVal/2);
 
-#define DIST_MODE_CHG     10
-#define DIST_WAKE_WDT     60
+#define DIST_MODE_CHG     20
+#define DIST_WAKE_WDT     80
 #define DIST_N_SAMPLE     5
 
 #define T_AWAKE_MAX       120000L     //Total time to stay awake, milliseconds
@@ -175,10 +175,19 @@ void setupLightShow() {
   }
 
   lightMode %= L_MAX;
+//  lightMode = -1;
 //  Serial.print("lightMode is: ");
 //  Serial.println(lightMode);  
   
   switch (lightMode) {
+    case -1:
+      lR.action = TURN_LOW;
+      lG.action = TURN_LOW;
+      lB.action = TURN_LOW;
+      lR.update = true;
+      lG.update = true;
+      lB.update = true;
+      break;
     case 7:
       lB.setLEDBrightness(ledHighVal);
       lG.setLEDBrightness(ledHighVal);
@@ -340,8 +349,8 @@ void procWDTOperating() {
   enableLightSensor();
   lightCur = analogRead(PIN_LIGHT);
   disableLightSensor();
-//  Serial.print("lightCur is: ");
-//  Serial.println(lightCur);
+  Serial.print("lightCur is: ");
+  Serial.println(lightCur);
   mapLEDVals();
 
   enableIRSensor();
