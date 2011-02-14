@@ -349,8 +349,8 @@ void procWDTOperating() {
   enableLightSensor();
   lightCur = analogRead(PIN_LIGHT);
   disableLightSensor();
-  Serial.print("lightCur is: ");
-  Serial.println(lightCur);
+//  Serial.print("lightCur is: ");
+//  Serial.println(lightCur);
   mapLEDVals();
 
   enableIRSensor();
