@@ -55,9 +55,9 @@ int ledQLowVal = ledMidVal-(ledMidVal/2);
 #define WDT_8_SEC 9
 
 //LED control variables
-#define R 3
-#define G 6
-#define B 5
+#define R 6
+#define G 9
+#define B 3
 LEDController lR(R);
 LEDController lG(G);
 LEDController lB(B); 
@@ -734,6 +734,11 @@ void checkSleepTimer() {
 }
 
 boolean isTiltActive() {
+  //V2 board has the tilt switch in series with power to save battery
+  return false;
+}
+
+boolean DISABLEDisTiltActive() {
 //  //Uncomment to disable the tile switch and leave unit always on.
 //  return false;
   

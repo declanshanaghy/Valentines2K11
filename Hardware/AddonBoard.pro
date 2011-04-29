@@ -2,24 +2,24 @@ EAGLE AutoRouter Statistics:
 
 Job           : /Users/dshanaghy/Workspace/PersonalProjects/Valentines2k11/Hardware/AddonBoard.brd
 
-Start at      : 16:38:12 (3/20/11)
-End at        : 16:38:15 (3/20/11)
-Elapsed time  : 00:00:03
+Start at      : 01:28:09 (4/29/11)
+End at        : 01:28:10 (4/29/11)
+Elapsed time  : 00:00:01
 
-Signals       :    20   RoutingGrid: 50 mil  Layers: 2
-Connections   :    34   predefined:  0 ( 0 Vias )
+Signals       :    36   RoutingGrid: 10 mil  Layers: 2
+Connections   :    53   predefined:  53 ( 7 Vias )
 
-Router memory :   9120
+Router memory :   277840
 
-Passname          :    Busses     Route Optimize1 Optimize2 Optimize3 Optimize4
+Passname          :     Route Optimize1 Optimize2 Optimize3 Optimize4
 
-Time per pass     :  00:00:00  00:00:03  00:00:00  00:00:00  00:00:00  00:00:00
-Number of Ripups  :         0       136         0         0         0         0
-max. Level        :         0         7         0         0         0         0
-max. Total        :         0        15         0         0         0         0
+Time per pass     :  00:00:00  00:00:00  00:00:00  00:00:00  00:00:01
+Number of Ripups  :         0         0         0         0         0
+max. Level        :         0         0         0         0         0
+max. Total        :         0         0         0         0         0
 
-Routed            :         6        32        32        33        33        33
-Vias              :         0        24        12        10        10        10
-Resolution        :    17.6 %    94.1 %    94.1 %    97.1 %    97.1 %    97.1 %
+Routed            :         0         0         0         0         0
+Vias              :         0         0         0         0         0
+Resolution        :   100.0 %   100.0 %   100.0 %   100.0 %   100.0 %
 
-Final             : 97.1% finished
+Final             : 100.0% finished
